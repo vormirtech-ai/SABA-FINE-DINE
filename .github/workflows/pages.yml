@@ -1,0 +1,63 @@
+# ---------------------------------------------------------------------------
+# GitHub Pages
+# ---------------------------------------------------------------------------
+# Everything in this repository is the site, already built. There is nothing
+# to compile, so this workflow uploads the repository as it stands and
+# deploys it.
+#
+# `enablement: true` switches Pages on by itself the first time this runs, so
+# nobody has to find the setting. If the run fails there, turn it on by hand
+# once — Settings, Pages, Build and deployment, Source: GitHub Actions — and
+# re-run this workflow.
+# ---------------------------------------------------------------------------
+
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time, and never cancel one that is part-way through
+# replacing the live site.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Check the site is whole before it goes live
+        run: |
+          for path in index.html demo/index.html demo/src/demo.js \
+                      demo/styles/app.css docs/DEPLOYMENT.html .nojekyll; do
+            test -e "$path" || { echo "missing: $path"; exit 1; }
+          done
+          echo "site looks whole:"
+          du -sh .
+
+      - name: Upload the site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
