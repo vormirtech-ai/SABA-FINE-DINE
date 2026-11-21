@@ -1,0 +1,14 @@
+# The till's own database and backups. Never commit a restaurant's trading
+# data, not even a test one.
+data/
+
+# Built by `npm run site`; the workflow builds its own copy.
+site/
+_site/
+
+node_modules/
+*.log
+.DS_Store
+
+# Holds the Supabase service key on a real till.
+.env

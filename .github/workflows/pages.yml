@@ -1,63 +1,88 @@
 # ---------------------------------------------------------------------------
 # GitHub Pages
 # ---------------------------------------------------------------------------
-# Everything in this repository is the site, already built. There is nothing
-# to compile, so this workflow uploads the repository as it stands and
-# deploys it.
+# This repository is the product. What gets published here is the website
+# about it, which includes a demonstration that runs entirely in the
+# visitor's browser.
 #
-# Pages has to be switched on once by a human, in Settings, Pages, Build and
-# deployment, Source: GitHub Actions. The first run of this workflow tried to
-# do it with `enablement: true` and GitHub refused — "Create Pages site
-# failed: Resource not accessible by integration" — because a workflow token
-# is not allowed to create the site. Asking again every run would only fail
-# the same way, so it does not ask.
+# It has to be a demonstration. Pages serves static files; a till is a small
+# server with a database on the restaurant's own computer. The thing you
+# install in the hotel is this repository, cloned onto that computer — see
+# INSTALL.md. Nothing in the restaurant depends on this website.
+#
+# Two jobs on purpose. The build runs the suite and assembles the site on
+# every branch, so a change that breaks either is caught where it is made.
+# Only the default branch publishes.
+#
+# Pages must be switched on once by hand: Settings, Pages, Build and
+# deployment, Source: GitHub Actions. A workflow token is not allowed to
+# create the site for itself.
 # ---------------------------------------------------------------------------
 
 name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
-# One deployment at a time, and never cancel one that is part-way through
-# replacing the live site.
 concurrency:
-  group: pages
+  group: pages-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Check out the repository
         uses: actions/checkout@v4
 
-      - name: Configure GitHub Pages
-        uses: actions/configure-pages@v5
+      - name: Use Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.22.0'
 
-      - name: Check the site is whole before it goes live
+      # The demonstration runs the product's own code, and the suite includes
+      # the parity tests that hold the two to the same figures. If that fails
+      # the demonstration must not ship.
+      - name: Test
+        run: node tests/all.mjs
+
+      - name: Build the site
+        run: |
+          node tools/build-site.mjs "$PWD/_site"
+          touch _site/.nojekyll
+
+      - name: Check the site came out whole
         run: |
           for path in index.html demo/index.html demo/src/demo.js \
                       demo/styles/app.css docs/DEPLOYMENT.html .nojekyll; do
-            test -e "$path" || { echo "missing: $path"; exit 1; }
+            test -e "_site/$path" || { echo "missing: $path"; exit 1; }
           done
-          echo "site looks whole:"
-          du -sh .
+          echo "site assembled:"
+          du -sh _site
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
 
       - name: Upload the site
         uses: actions/upload-pages-artifact@v3
         with:
-          path: '.'
+          path: _site
 
+  deploy:
+    needs: build
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4

@@ -1,52 +1,176 @@
-# Saba — Fine Dine
+<div align="center">
+  <img src="app/assets/saba-logo.png" alt="Saba Fine Dine" width="160">
 
-Billing and kitchen order tickets for a fine-dining restaurant.
-
-**The website is here:** https://vormirtech-ai.github.io/SABA-FINE-DINE/
-
-- **/** — what Saba is and what it does
-- **/demo/** — the whole application, working, in your browser
-- **/docs/** — installing it, running it, and how it is built
-
-## Signing in to the demonstration
-
-| | PIN | Sees |
-|---|---|---|
-| Owner / Admin | `1379` | everything, including the takings |
-| Devesh Kamat | `3582` | restaurant manager — the service, never the takings |
-| Alina Rahman | `2471` | captain |
-| Priya Nair | `5814` | waiter |
-| Kitchen Pass | `4693` | the kitchen display, and nothing else |
-
-Sign in as the waiter and then as the owner to see how much of the building
-each role is allowed to reach.
-
-It works on a phone. The sections move to a bar across the bottom and the
-order screen becomes two tabs — the carte, and this table.
-
-## This is a demonstration, not a till
-
-It is the real application — the same screens, the same prices, the same
-arithmetic to the paise — running against a stand-in that lives inside the
-browser tab. An automated test runs one whole service through both the real
-server and this stand-in and insists the totals match.
-
-But everything it holds is in that tab. Close it, or press **Start again**,
-and it is gone. Two people opening the site do not see each other's tables.
-Nothing is written down anywhere.
-
-That is right for a demonstration and wrong for a restaurant. A real install
-is one small computer in the back office that every screen in the building
-talks to: a captain's phone, the tablet at the pass, the till, the manager's
-laptop. It needs no internet — unplug the line and nothing changes.
-
-**/docs/DEPLOYMENT.html** covers installing it properly.
-
-## What is in this repository
-
-The built website only. The product itself — the server, the database, the
-printer driver, the install scripts — is not here.
+  <h1>Saba Restaurant Suite</h1>
+  <p><strong>Billing, kitchen order tickets and floor management for fine dining.</strong><br>
+  Runs on the restaurant's own network. No internet, no subscription, no dependencies.</p>
+</div>
 
 ---
 
-© Saba Fine Dine. See LICENSE.txt.
+> ### Installing it in the restaurant
+>
+> **[INSTALL.md](INSTALL.md)** — clone this repository onto one computer in
+> the back office and run `npm start`. Every other screen in the building is
+> a browser pointed at it. It needs no internet.
+>
+> ### Looking at it first
+>
+> **[The website](https://vormirtech-ai.github.io/SABA-FINE-DINE/)** — what it
+> is, the guides, and a demonstration you can drive.
+>
+> That demonstration runs *inside your browser tab*, because GitHub Pages
+> serves static files and a till is a server with a database. It is the same
+> application, the same prices and the same arithmetic to the paise — a test
+> runs one whole service through both and insists the totals match — but
+> everything it holds dies with the tab. It is for showing, not for trading.
+
+## What it is
+
+One small server on a computer in the back office, and a browser on every
+screen in the building: the captain's tablet, the pass in the kitchen, the
+till at the front, the manager's laptop. They all read and write the same
+tables at the same time. Unplug the internet and nothing changes.
+
+It is written in plain JavaScript against Node's own standard library. There
+are **no runtime dependencies at all** — nothing to `npm install`, nothing to
+compile on the till, nothing that goes stale between now and the restaurant's
+third year of using it.
+
+## What it does
+
+| | |
+|---|---|
+| **Floor** | Live plan of every room. Seat, move, merge and transfer tables; covers, elapsed time and running total on each; reservations seated straight onto the plan. |
+| **Order** | The carte by course, with half and full plates, modifiers, allergy notes and seat numbers. Fire a course and the kitchen sees it — and prints it, if there is a printer. |
+| **Kitchen** | A ticket per course per station, timed, with the ones that are running late brought to the front. Bump, recall, reprint. Prints to a thermal printer by itself if one is set up. |
+| **Bills** | Print, split (by seat, by item, or evenly), part-pay across cash, card and UPI, discount with manager approval, void and comp with a reason that is kept. |
+| **Tax** | Service charge and CGST/SGST worked out per line, in whole paise, with the rates and the round-off set in one place. |
+| **Reports** | Today's trading as it happens; the Z report and cash-up at close; thirty days of history; sales by item, by hour, by server and by payment method; a GST summary; CSV export of all of it. |
+| **Book** | Reservations with covers, time, table and a note, carried through to the floor plan. |
+| **Menu** | Add a dish, price it, move it between sections, courses and stations, retire it, and 86 it from anywhere in the building. |
+| **Hours** | Staff clock in and out. Everyone marks their own; only the owner sees the whole roster, and the hours go to the cloud for payroll. |
+| **Setup** | The bill header, staff and their PINs, the service charge and tax rates, the rooms and tables, the kitchen printer, backups, and the live list of terminals. |
+| **Cloud** | Optional. An off-site copy in Supabase: bills and the audit trail push up, the menu and staff sync both ways, and the takings are readable from anywhere. Off by default, and the restaurant trades the same without it. |
+
+Every screen is one of five roles' business — admin, manager, captain,
+waiter, kitchen — and the server enforces that, not the interface. The
+takings are admin only: a manager runs the service and never sees them.
+
+The captain and the waiter work on their feet, so the same screens fold down
+to a phone: the sections move to a bar across the bottom under the thumb, and
+the order screen becomes two tabs — the carte, and this table — each with the
+whole glass, rather than two columns neither of which you can read. A tablet
+in portrait keeps both side by side. Nothing is a separate mobile build;
+there is one application and it fits.
+
+## Try it without installing anything
+
+There is a demonstration on the web: the whole application, running against a
+till that lives in your browser tab.
+
+> **[Open the demonstration →](https://vormirtech-ai.github.io/TBC-BILLING/saba/)**
+> Sign in as Manager with PIN 1379.
+
+It is built from this directory by `tools/build-site.mjs` and published by
+GitHub Pages. Every screen, every figure and every refusal is the product's
+own code — `tests/till/parity.test.mjs` runs a service through both the real
+server and the browser till and fails if a single paisa differs.
+
+What it is **not** is a place to run a restaurant. A till is a server with a
+database on the restaurant's own computer; a web page cannot be one, and the
+restaurant's bills should not be on the public internet in the first place.
+The demonstration keeps everything in the tab and forgets it when the tab
+closes.
+
+## Getting it running for real
+
+**On a restaurant's till** (Linux, systemd, Node 22.5+) — the normal way:
+
+```sh
+sudo ./install.sh
+```
+
+**To look at it on a laptop**, with a month of trading and a room mid-service
+already in it:
+
+```sh
+npm run demo        # then open http://localhost:8080, PIN 1379
+```
+
+**Anywhere else**, including in Docker if you prefer it:
+
+```sh
+node server/main.js        # or: docker compose up -d
+```
+
+Each prints the address to open on the tablets, and the manager PIN, once.
+None of them needs Docker, and none of them needs the website.
+
+Full instructions, including the network and the printers:
+**[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**.
+
+## Running it day to day
+
+Opening and closing, the Z report, backups, restoring one, adding staff,
+changing prices, and what to do when something goes wrong:
+**[docs/OPERATIONS.md](docs/OPERATIONS.md)**.
+
+## Taking it over
+
+The shape of the code, where each decision lives, how to change the tax
+rules, add a screen or add a role, and the things a future maintainer would
+otherwise have to find out the hard way:
+**[docs/HANDOVER.md](docs/HANDOVER.md)**.
+
+## Tests
+
+```sh
+npm test
+```
+
+A hundred and eleven cases: the pricing and order maths as pure functions, the
+API against a real server on a real SQLite database over real HTTP, the
+published demonstration held against the product it demonstrates, the cloud
+sync against a stand-in for Supabase, and the kitchen printer against a real
+socket and a real file. Nothing is mocked. A point of sale is a thing that takes money; a suite that stubs out
+the database proves only that the stubs work.
+
+```sh
+npm test unit     # the domain, instantly
+npm test api      # a real server per case
+npm test till     # the demonstration, against the real thing
+npm test sync     # the cloud copy
+npm test printer  # the kitchen printer
+```
+
+The Supabase SQL is verified separately, against an actual PostgreSQL, since
+the test suite must not need one:
+
+```sh
+npm run verify-cloud "postgresql://user@host/db"
+```
+
+## An off-site copy, if the restaurant wants one
+
+Saba needs no cloud and asks for none. Point it at a Supabase project and it
+will also keep a copy there: bills, dockets and the audit trail push up,
+while the menu, the charges and the staff list sync both ways, so a price can
+be changed from a phone.
+
+Bills only ever travel upward — the till owns what happened, and nothing in
+the cloud can alter what a guest was charged. PINs never leave the building
+at all.
+
+**[docs/CLOUD-SYNC.md](docs/CLOUD-SYNC.md)** — creating the project, the SQL to
+run, where each key goes, and how to read the takings in Supabase.
+
+## Requirements
+
+- Node 22.5 or newer (22.22 LTS is what the Docker image pins).
+- A computer that stays switched on. A mini PC or a Raspberry Pi 5 is plenty.
+- A wifi network the tablets can reach it on. It does not need internet.
+
+## Licence
+
+Commercial. One licence per restaurant. See [LICENSE.txt](LICENSE.txt).
