@@ -5,10 +5,12 @@
 # to compile, so this workflow uploads the repository as it stands and
 # deploys it.
 #
-# `enablement: true` switches Pages on by itself the first time this runs, so
-# nobody has to find the setting. If the run fails there, turn it on by hand
-# once — Settings, Pages, Build and deployment, Source: GitHub Actions — and
-# re-run this workflow.
+# Pages has to be switched on once by a human, in Settings, Pages, Build and
+# deployment, Source: GitHub Actions. The first run of this workflow tried to
+# do it with `enablement: true` and GitHub refused — "Create Pages site
+# failed: Resource not accessible by integration" — because a workflow token
+# is not allowed to create the site. Asking again every run would only fail
+# the same way, so it does not ask.
 # ---------------------------------------------------------------------------
 
 name: Deploy to GitHub Pages
@@ -41,8 +43,6 @@ jobs:
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
-        with:
-          enablement: true
 
       - name: Check the site is whole before it goes live
         run: |
