@@ -416,7 +416,7 @@ report, every counter and the day-close all use `businessDay()`; never use
 npm test
 ```
 
-A hundred and eleven cases. `npm test <suite>` runs one of them:
+A hundred and thirteen cases. `npm test <suite>` runs one of them:
 
 - `tests/unit/` — the pure functions, in-process, instant.
 - `tests/api/` — a real server, a real SQLite database, real HTTP, one
@@ -429,6 +429,15 @@ A hundred and eleven cases. `npm test <suite>` runs one of them:
 - `tests/sync/` — the cloud copy, against a stand-in for Supabase.
 - `tests/printer/` — the kitchen printer, against a real socket and a real
   file.
+- `tests/boot/` — `node server/main.js`, **spawned, not imported**. Every
+  other suite calls `start()` directly, which is not what a till does: a till
+  runs the file, and whether the file starts itself is one line at the foot
+  of `main.js`. That line was wrong on Windows for this product's whole life
+  — it built `file://` + `argv[1]`, which on Windows gives
+  `file://C:\Users\...` against an `import.meta.url` of
+  `file:///C:/Users/...`. No match, so `main.js` defined everything, called
+  nothing, and exited 0 in silence. Nothing that imports `start()` can ever
+  see that. If you add another entry point, give it a case here.
 
 **Ports come from `tests/port.mjs`.** One counter, shared. Two suites that
 each picked their own "random" range overlapped exactly once in fifty runs,

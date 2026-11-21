@@ -7,6 +7,7 @@
  *   node tests/all.mjs till       the published demonstration only
  *   node tests/all.mjs sync       the cloud copy only
  *   node tests/all.mjs printer    the kitchen printer only
+ *   node tests/all.mjs boot       starting it the way a till starts it
  *
  * No framework, no dependencies, no build step — the same constraints the
  * application itself runs under.
@@ -40,8 +41,17 @@ const PRINTER = [
   './printer/printer.test.mjs',
 ];
 
-const SUITES = { unit: UNIT, api: API, till: TILL, sync: SYNC, printer: PRINTER };
+/**
+ * Starting it the way a restaurant starts it: `node server/main.js`, spawned,
+ * not imported. Every other suite calls `start()` directly and so cannot see
+ * whether the file starts itself.
+ */
+const BOOT = [
+  './boot/boot.test.mjs',
+];
 
-const files = SUITES[only] || [...UNIT, ...API, ...TILL, ...SYNC, ...PRINTER];
+const SUITES = { unit: UNIT, api: API, till: TILL, sync: SYNC, printer: PRINTER, boot: BOOT };
+
+const files = SUITES[only] || [...UNIT, ...API, ...TILL, ...SYNC, ...PRINTER, ...BOOT];
 
 await run(files);

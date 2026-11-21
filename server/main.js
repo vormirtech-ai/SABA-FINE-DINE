@@ -7,6 +7,7 @@
 
 import { createServer } from 'node:http';
 import { networkInterfaces } from 'node:os';
+import { pathToFileURL } from 'node:url';
 
 import { config, configure } from './config.js';
 import { log } from './log.js';
@@ -278,5 +279,17 @@ export function installSignalHandlers(server) {
   return server;
 }
 
-// `node server/main.js` starts it; importing it (as the tests do) does not.
-if (import.meta.url === `file://${process.argv[1]}`) installSignalHandlers(start());
+/**
+ * `node server/main.js` starts it; importing it (as the tests do) does not.
+ *
+ * `pathToFileURL`, not `file://` and the path glued on. On Windows argv[1] is
+ * `C:\Users\user\saba\server\main.js`, which glues into
+ * `file://C:\Users\...` while `import.meta.url` is
+ * `file:///C:/Users/user/saba/server/main.js` — drive letter rooted, forward
+ * slashes. They never match, so the server did not start, and because
+ * nothing threw it exited 0 and printed nothing at all. `npm start` returned
+ * straight to the prompt on every Windows till.
+ */
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  installSignalHandlers(start());
+}

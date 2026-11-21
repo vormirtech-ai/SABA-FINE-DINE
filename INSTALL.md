@@ -124,6 +124,12 @@ Setup, Printing, Kitchen printer.
 
   A USB printer on Linux:   /dev/usb/lp0
 
+  On Windows, use the network address. A USB thermal printer plugged
+  into a Windows till is reached by sharing it and giving the share's
+  path (\\TILL\Kitchen), but a printer with an Ethernet socket and a
+  fixed address is far less trouble and survives the till being
+  restarted.
+
 There is a Test page button beside it. Once it is set, a docket prints by
 itself the moment a captain fires a course — no dialogue, nobody pressing
 anything.

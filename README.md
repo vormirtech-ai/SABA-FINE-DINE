@@ -129,7 +129,7 @@ otherwise have to find out the hard way:
 npm test
 ```
 
-A hundred and eleven cases: the pricing and order maths as pure functions, the
+A hundred and thirteen cases: the pricing and order maths as pure functions, the
 API against a real server on a real SQLite database over real HTTP, the
 published demonstration held against the product it demonstrates, the cloud
 sync against a stand-in for Supabase, and the kitchen printer against a real
@@ -142,6 +142,7 @@ npm test api      # a real server per case
 npm test till     # the demonstration, against the real thing
 npm test sync     # the cloud copy
 npm test printer  # the kitchen printer
+npm test boot     # starting it the way a till starts it
 ```
 
 The Supabase SQL is verified separately, against an actual PostgreSQL, since
