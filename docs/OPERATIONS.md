@@ -258,10 +258,28 @@ itself prints each step of the arithmetic.
 
 ### Everybody is locked out
 
-A run of wrong PINs locks a terminal out for a minute; wait it out. If a PIN
-is genuinely lost and there is no manager who can sign in, that needs us: the
-PINs are stored hashed and cannot be read back out of the database by anyone,
-including us. Recovery means adding a manager account directly on the till.
+A run of wrong PINs locks a terminal out for a minute; wait it out.
+
+If the owner's PIN is genuinely lost — it scrolled past unread on the first
+run, or the owner left and took it with them — set a new one **at the till
+itself**, in the folder it runs from:
+
+```sh
+npm run owner-pin -- 4812
+```
+
+It re-PINs the owner's account, or creates one if there is none, and signs
+out anybody holding that account's session. The rest of the staff are
+untouched. It refuses a guessable PIN for the same reason Setup does.
+
+Nobody can read a PIN back out of a till, us included: they are stored
+scrypt-hashed with a salt each. Which is why losing one means setting a new
+one rather than looking the old one up.
+
+That command only works on the till, in its own folder, with the database in
+front of it — somebody standing there can already do anything to that
+machine. It is deliberately not reachable over the network, where anybody on
+the restaurant's wi-fi could find it.
 
 ### The whole thing is behaving strangely
 

@@ -69,6 +69,18 @@ RUNNING IT — THE SHORT VERSION
      There is one account on a new till, called Owner, and that PIN is
      its PIN. Sign in with it. It can reach everything.
 
+     There is no fixed, out-of-the-box PIN, on purpose: a till that
+     ships with 1234 on every install has no access control at all.
+     Yours is generated for your install and shown once.
+
+     Missed it, or want to choose it yourself? Either works:
+
+         npm run owner-pin -- 4812      sets it, any time, at the till
+
+         set SABA_SETUP_PIN=4812        choose it before the FIRST run
+         npm start                      (Windows; on Linux put it in
+                                         front: SABA_SETUP_PIN=4812 npm start)
+
      Change it straight away — Setup, People, Owner — and add the rest of
      your staff there, each with their own four digits. Nobody shares a
      PIN: the audit trail is worthless if two people are one person.
