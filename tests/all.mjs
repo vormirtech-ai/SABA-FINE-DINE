@@ -8,6 +8,7 @@
  *   node tests/all.mjs sync       the cloud copy only
  *   node tests/all.mjs printer    the kitchen printer only
  *   node tests/all.mjs boot       starting it the way a till starts it
+ *   node tests/all.mjs browser    a real browser against the built site
  *
  * No framework, no dependencies, no build step — the same constraints the
  * application itself runs under.
@@ -50,7 +51,20 @@ const BOOT = [
   './boot/boot.test.mjs',
 ];
 
-const SUITES = { unit: UNIT, api: API, till: TILL, sync: SYNC, printer: PRINTER, boot: BOOT };
+/**
+ * A real browser against the built site. IndexedDB exists nowhere else, so
+ * "does a table survive the tab closing" cannot be asked in Node. Needs the
+ * site built (`npm run site`) and Playwright present; skips itself, saying
+ * so, when either is missing.
+ */
+const BROWSER = [
+  './browser/persist.test.mjs',
+];
+
+const SUITES = {
+  unit: UNIT, api: API, till: TILL, sync: SYNC,
+  printer: PRINTER, boot: BOOT, browser: BROWSER,
+};
 
 const files = SUITES[only] || [...UNIT, ...API, ...TILL, ...SYNC, ...PRINTER, ...BOOT];
 

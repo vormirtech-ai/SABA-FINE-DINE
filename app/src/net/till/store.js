@@ -66,6 +66,126 @@ export const db = {
 export const bump = () => (db.revision += 1);
 export const today = () => businessDay(Date.now(), DAY_ROLLOVER_HOUR);
 
+/* --------------------------------------------------------- persistence --- */
+
+/*
+ * The till above this line is deliberately synchronous: a view asks what is
+ * on table six and gets an answer in the same tick, which is why the screen
+ * never flickers. Storage is not synchronous, so rather than make eight
+ * hundred lines async, each mutation says which record it touched and the
+ * router writes the lot in one transaction before it answers.
+ *
+ * One transaction per request falls out of that for free, which is exactly
+ * what a bill needs: the invoice, the payments, the counter it took its
+ * number from and the audit line all land together or not at all.
+ *
+ * The adapter is injected rather than imported. In a browser it is
+ * IndexedDB; in the parity tests, which run in Node against the real server
+ * to check the arithmetic agrees, there is none and this is all a no-op.
+ */
+
+let store = null;
+const dirty = new Map();
+
+/** @param {{commit: (changes: object[]) => Promise<void>}|null} adapter */
+export const usePersistence = (adapter) => { store = adapter; };
+export const persisting = () => Boolean(store);
+
+/**
+ * Note that a record changed. `value` is read at drain time, not now, so a
+ * record touched three times in one request is written once, as it finally
+ * stands.
+ */
+export const mark = (kind, id) => { dirty.set(`${kind}::${id}`, { kind, id }); };
+
+/** Note that a record is gone. It travels as a tombstone, not a silence. */
+export const markGone = (kind, id) => { dirty.set(`${kind}::${id}`, { kind, id, gone: true }); };
+
+/** What a record looks like on its way to storage, by kind. */
+function snapshot(kind, id) {
+  switch (kind) {
+    case 'orders': return db.orders.get(id) || null;
+    case 'reservations': return db.reservations.get(id) || null;
+    case 'menu': return db.menu.get(id) || null;
+    case 'eightySix': {
+      const row = db.eightySix.get(id);
+      return row ? { id, ...row } : null;
+    }
+    case 'users': return db.users.find((u) => u.id === id) || null;
+    case 'audit': return db.audit.find((a) => a.id === id) || null;
+    case 'shifts': return db.shifts.find((x) => x.id === id) || null;
+    case 'attendance': return db.attendance.find((x) => x.id === id) || null;
+    case 'settings': return { id, value: db.settings[id] };
+    case 'counters': return { id, value: db.counters[id] };
+    default: return null;
+  }
+}
+
+/** Take everything noted since the last drain, ready for one transaction. */
+export function drain() {
+  const changes = [];
+  for (const { kind, id, gone } of dirty.values()) {
+    const value = gone ? null : snapshot(kind, id);
+    changes.push({ store: kind, id, value });
+  }
+  dirty.clear();
+  return changes;
+}
+
+/** Write what has been noted. Resolves when the transaction has committed. */
+export async function flush() {
+  const changes = drain();
+  if (store && changes.length) await store.commit(changes);
+  return changes.length;
+}
+
+/**
+ * Fill memory from what storage holds.
+ *
+ * The inverse of `drain`. Order matters for two of them: the charges and the
+ * floor plan are pushed into the shared modules that cost bills and draw
+ * rooms, and a bill costed before its own restaurant's tax rate arrived
+ * would be costed at the shipped default.
+ */
+export function hydrate(rows) {
+  db.orders = new Map((rows.orders || []).map((o) => [o.id, o]));
+  db.reservations = new Map((rows.reservations || []).map((r) => [r.id, r]));
+  db.menu = new Map((rows.menu || []).map((m) => [m.id, m]));
+  db.eightySix = new Map((rows.eightySix || []).map(({ id, ...rest }) => [id, rest]));
+  db.users = rows.users || [];
+  db.audit = (rows.audit || []).sort((a, b) => a.id - b.id);
+  db.shifts = rows.shifts || [];
+  db.attendance = rows.attendance || [];
+
+  db.settings = {};
+  for (const row of rows.settings || []) db.settings[row.id] = row.value;
+  db.counters = {};
+  for (const row of rows.counters || []) db.counters[row.id] = row.value;
+
+  if (db.settings.charges) useCharges(db.settings.charges);
+  if (db.settings.floorplan) useFloorPlan(db.settings.floorplan);
+
+  db.revision += 1;
+}
+
+/** Is there a restaurant in here, or is this a till that has never traded? */
+export const isEmpty = (rows) =>
+  !(rows.users || []).length && !(rows.settings || []).length;
+
+/** Note every record there is — used after seeding a till from nothing. */
+export function markEverything() {
+  for (const id of db.orders.keys()) mark('orders', id);
+  for (const id of db.reservations.keys()) mark('reservations', id);
+  for (const id of db.menu.keys()) mark('menu', id);
+  for (const id of db.eightySix.keys()) mark('eightySix', id);
+  for (const row of db.users) mark('users', row.id);
+  for (const row of db.audit) mark('audit', row.id);
+  for (const row of db.shifts) mark('shifts', row.id);
+  for (const row of db.attendance) mark('attendance', row.id);
+  for (const key of Object.keys(db.settings)) mark('settings', key);
+  for (const key of Object.keys(db.counters)) mark('counters', key);
+}
+
 export function reset() {
   db.revision = 0;
   db.counters = { order: 0, invoice: 0 };
@@ -93,13 +213,16 @@ export function reset() {
 
 export function nextCounter(name) {
   db.counters[name] = (db.counters[name] || 0) + 1;
+  mark('counters', name);
   return db.counters[name];
 }
 
 export function audit(kind, message, { actor = 'System', meta = null } = {}) {
-  db.audit.push({
+  const row = {
     id: db.audit.length + 1, at: Date.now(), day: today(), kind, actor, message, meta,
-  });
+  };
+  db.audit.push(row);
+  mark('audit', row.id);
 }
 
 export const auditLog = ({ day = today(), limit = 200 } = {}) =>
@@ -114,6 +237,7 @@ export function setSetting(key, value) {
   if (key === 'charges') value = validateCharges(value);
   if (key === 'floorplan') value = validateFloorPlan(value);
   db.settings[key] = value;
+  mark('settings', key);
   if (key === 'charges') useCharges(value);
   if (key === 'floorplan') useFloorPlan(value);
   return value;
@@ -276,6 +400,7 @@ export function createMenuItem(input) {
     active: true,
   };
   db.menu.set(id, item);
+  mark('menu', id);
   return menuItem(id);
 }
 
@@ -287,14 +412,20 @@ export function updateMenuItem(id, patch) {
   delete next.eightySixed;
   delete next.eightySix;
   db.menu.set(id, next);
+  mark('menu', id);
   return menuItem(id);
 }
 
 export function setEightySix(itemId, on, { actor, note = '' }) {
   const item = menuItem(itemId);
   if (!item) throw notFound('No such dish');
-  if (on) db.eightySix.set(itemId, { by: actor, note, at: Date.now() });
-  else db.eightySix.delete(itemId);
+  if (on) {
+    db.eightySix.set(itemId, { by: actor, note, at: Date.now() });
+    mark('eightySix', itemId);
+  } else {
+    db.eightySix.delete(itemId);
+    markGone('eightySix', itemId);
+  }
   audit('86', `${item.name} ${on ? 'marked 86' : 'put back on'}${note ? ` — ${note}` : ''}`,
     { actor });
   return menuItem(itemId);
@@ -323,6 +454,7 @@ export function mutateOrder(id, fn, { allowSettled = false } = {}) {
     throw conflict('That bill has already been settled');
   }
   const result = fn(order);
+  mark('orders', order.id);
   bump();
   return { order, result, revision: db.revision };
 }
@@ -342,6 +474,7 @@ export function seatTable({ tableId, covers, guestName, reservationId, user }) {
   });
   order.businessDay = today();
   db.orders.set(order.id, order);
+  mark('orders', order.id);
 
   if (reservationId) {
     const booking = db.reservations.get(reservationId);
@@ -695,6 +828,7 @@ export function saveReservation(input, user) {
   };
   if (!row.name) throw badRequest('A booking needs a name');
   db.reservations.set(id, row);
+  mark('reservations', id);
   audit('BOOKING', `${existing ? 'Updated' : 'Took'} a booking for ${row.name}`,
     { actor: user.name, meta: { id } });
   bump();
@@ -705,6 +839,7 @@ export function dropReservation(id, user) {
   const row = db.reservations.get(id);
   if (!row) throw notFound('No such booking');
   db.reservations.delete(id);
+  markGone('reservations', id);
   audit('BOOKING', `Cancelled the booking for ${row.name}`, { actor: user.name });
   bump();
   return row;
@@ -741,6 +876,7 @@ export function clockIn(user) {
     updated_at: Date.now(),
   };
   db.attendance.push(row);
+  mark('attendance', row.id);
   audit('ATTENDANCE', `${user.name} clocked in`, { actor: user.name });
   bump();
   return withMinutes(row);
@@ -752,6 +888,7 @@ export function clockOut(user, { note = '' } = {}) {
   spell.clock_out = Date.now();
   spell.note = String(note).slice(0, 120);
   spell.updated_at = Date.now();
+  mark('attendance', spell.id);
 
   const minutes = Math.round((spell.clock_out - spell.clock_in) / 60000);
   audit('ATTENDANCE',
@@ -779,6 +916,7 @@ export function openShift({ floatPaise, user }) {
     doc: '{}',
   };
   db.shifts.push(shift);
+  mark('shifts', shift.id);
   audit('SHIFT', `Till opened with a float of ${((floatPaise || 0) / 100).toFixed(2)}`,
     { actor: user.name });
   bump();
@@ -789,6 +927,7 @@ export function closeShift({ countedPaise, note, user }) {
   const shift = currentShift();
   if (!shift) throw conflict('No shift is open');
   shift.closed_at = Date.now();
+  mark('shifts', shift.id);
   shift.closed_by = user.name;
   shift.counted_paise = Math.max(0, Math.round(countedPaise || 0));
   shift.doc = JSON.stringify({ note: String(note || '').slice(0, 240) });

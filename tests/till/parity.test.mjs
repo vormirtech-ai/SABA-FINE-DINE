@@ -88,8 +88,10 @@ async function browserTill() {
     .map((u) => ({ id: u.id, name: u.name, role: u.role, initials: u.initials, active: true }))
     .find((u) => u.role === 'admin');
 
+  // `handle` is async now: a write is not answered until the transaction
+  // holding it has committed, which is the whole point of the storage layer.
   const call = async (method, path, body) => {
-    const res = handle(path, {
+    const res = await handle(path, {
       method,
       body: body === undefined ? undefined : JSON.stringify(body),
     });

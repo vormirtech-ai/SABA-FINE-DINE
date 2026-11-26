@@ -19,6 +19,7 @@ import { shiftDay } from '../../shared/format.js';
 import { mayOpen } from '../../shared/config.js';
 
 import * as till from './store.js';
+import * as local from '../../db/local.js';
 import { TillError, badRequest, notFound, conflict, forbidden } from './store.js';
 import { seedDemo } from './seed.js';
 
@@ -125,6 +126,11 @@ on('POST', '/api/session', (ctx) => {
     throw new TillError(401, 'That PIN was not recognised');
   }
   till.db.session = publicUser(row);
+  // Device-local, and never shared: who is standing at THIS terminal. Kept
+  // so a refresh mid-service does not sign the captain out — the server
+  // build does the same thing with a cookie. It must never sync, or signing
+  // in at the pass would sign you in at the till.
+  rememberSession(till.db.session);
   return { user: till.db.session, revision: till.db.revision };
 }, { open: true });
 
@@ -137,6 +143,7 @@ on('GET', '/api/session', () => ({
 
 on('DELETE', '/api/session', () => {
   till.db.session = null;
+  rememberSession(null);
   return { ok: true };
 });
 
@@ -433,6 +440,7 @@ on('POST', '/api/users', (ctx) => {
     active: true,
   };
   till.db.users.push(row);
+  till.mark('users', row.id);
   till.audit('STAFF', `${row.name} added as ${row.role}`, { actor: user().name });
   till.bump();
   return { user: publicUser(row), revision: till.db.revision };
@@ -451,6 +459,7 @@ on('PATCH', '/api/users/:id', (ctx) => {
   if (ctx.body.role !== undefined) row.role = ctx.body.role;
   if (ctx.body.active !== undefined) row.active = !!ctx.body.active;
   if (ctx.body.pin) row.pin = String(ctx.body.pin);
+  till.mark('users', row.id);
   till.audit('STAFF', `${row.name} updated`, { actor: user().name });
   till.bump();
   return { user: publicUser(row), revision: till.db.revision };
@@ -501,7 +510,7 @@ const json = (status, payload) => new Response(JSON.stringify(payload), {
  * refusals. A demonstration that let a captain open the takings would be
  * demonstrating something the product does not do.
  */
-export function handle(path, init = {}) {
+export async function handle(path, init = {}) {
   const url = new URL(path, 'http://till.local');
   const found = match(init.method || 'GET', url.pathname);
 
@@ -526,7 +535,31 @@ export function handle(path, init = {}) {
     }
 
     const body = init.body ? JSON.parse(init.body) : {};
-    return json(200, route.handler({ params, body, query: url.searchParams }) ?? { ok: true });
+    const payload = route.handler({ params, body, query: url.searchParams }) ?? { ok: true };
+
+    /*
+     * Everything this request touched goes to storage in one transaction, and
+     * the answer is not sent until that transaction has committed. A bill,
+     * the payments against it, the counter its number came from and the audit
+     * line are therefore one all-or-nothing write: a refresh in the middle of
+     * saving cannot leave half a bill behind.
+     */
+    if (init.method && init.method !== 'GET') {
+      try {
+        await till.flush();
+      } catch (error) {
+        // Memory and storage now disagree, and memory is the liar. Go back to
+        // what is actually written down rather than let the screen show a
+        // table that did not survive.
+        await reload();
+        return json(503, {
+          error: 'That could not be saved on this device. Nothing was changed —'
+            + ' check the browser is not in private mode and try again.',
+        });
+      }
+    }
+
+    return json(200, payload);
   } catch (error) {
     if (error instanceof TillError) return json(error.status, { error: error.message });
     // A domain function threw: the same sentence the server would have sent.
@@ -534,11 +567,94 @@ export function handle(path, init = {}) {
   }
 }
 
-/** Switch this build over to the in-tab till. Called by the demo bootstrap. */
-export function install() {
-  seedDemo();
+/* ---------------------------------------------------------------- boot --- */
+
+/** Write who is signed in here to this device's own corner of storage. */
+function rememberSession(session) {
+  if (!till.persisting()) return;
+  // Not awaited: signing in must not wait on a disk, and if this one write
+  // is lost the worst case is a sign-in screen after a refresh.
+  local.setDevice('session', session).catch(() => {});
+}
+
+/**
+ * Put back whoever was signed in at this terminal.
+ *
+ * Checked against the staff list rather than trusted: an account that has
+ * been switched off, deleted, or had its role changed since must not come
+ * back with its old powers because a tab was left open.
+ */
+function restoreSession(saved) {
+  if (!saved) return null;
+  const row = till.db.users.find((u) => u.id === saved.id && u.active);
+  if (!row) return null;
+  return {
+    id: row.id, name: row.name, initials: row.initials, role: row.role, active: true,
+  };
+}
+
+/**
+ * Put memory back in step with storage.
+ *
+ * Called when a write failed and the two have come apart, and after the sync
+ * loop has applied a page from the shared database. Storage wins: it is what
+ * actually survived.
+ */
+async function reload() {
+  if (!till.persisting()) return;
+  till.hydrate(await local.readAll());
+}
+
+/**
+ * Open this till.
+ *
+ * @param {object}  [opts]
+ * @param {boolean} [opts.demo] seed the worked example if the till is new.
+ *   A showroom wants a restaurant in mid-service to look at; a real one wants
+ *   an empty floor plan and its own staff.
+ *
+ * Three cases, and the third is the one worth being careful about:
+ *
+ *   No storage at all — a locked-down browser, private mode on some phones.
+ *   The till still runs, in memory, and `persisting()` is false so the
+ *   interface can say plainly that nothing here will survive the tab.
+ *
+ *   Storage with a restaurant in it. Load it. This is every start after the
+ *   first, and nothing is seeded over the top of real trading.
+ *
+ *   Storage, empty. Seed, then write the whole thing down in one transaction
+ *   so the second start finds it.
+ */
+export async function install({ demo = false } = {}) {
   globalThis.SABA_TILL = handle;
-  return handle;
+
+  if (!local.available()) {
+    seedDemo();
+    return { handle, persisted: false };
+  }
+
+  try {
+    await local.open();
+    till.usePersistence(local);
+
+    const rows = await local.readAll();
+    if (till.isEmpty(rows)) {
+      seedDemo({ demo });
+      till.markEverything();
+      await till.flush();
+      return { handle, persisted: true, founded: true };
+    }
+
+    till.hydrate(rows);
+    till.db.session = restoreSession(await local.getDevice('session', null));
+    return { handle, persisted: true, founded: false };
+  } catch (error) {
+    // Storage exists but will not open — a corrupt database, a quota refusal.
+    // Trading in memory beats not trading, and the indicator says which.
+    till.usePersistence(null);
+    seedDemo();
+    return { handle, persisted: false, error: error.message };
+  }
 }
 
 export { till, VOID_REASONS, ROLE_ROUTES };

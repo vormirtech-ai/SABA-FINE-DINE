@@ -25,8 +25,32 @@ export const DEMO_STAFF = [
 const initials = (name) => name.trim().split(/\s+/).slice(0, 2)
   .map((w) => w[0] || '').join('').toUpperCase();
 
-export function seedDemo() {
+/**
+ * @param {object}  [opts]
+ * @param {boolean} [opts.demo=true] fill the room with a service in progress.
+ *
+ * A showroom wants a restaurant mid-service to look at. A real one wants its
+ * own empty floor plan and nothing it did not do itself — seeding invented
+ * bills into a till that is about to take real money would be indefensible.
+ */
+export function seedDemo({ demo = true } = {}) {
   till.reset();
+
+  if (!demo) {
+    // The staff a restaurant actually starts with: one owner, who adds the
+    // rest under Setup. The PIN is theirs to change on the first evening.
+    till.db.users = [{
+      id: 'u_admin',
+      name: 'Owner',
+      initials: 'O',
+      role: 'admin',
+      pin: DEMO_STAFF[0].pin,
+      active: true,
+    }];
+    till.audit('SYSTEM', 'Till opened for the first time', { actor: 'Saba' });
+    till.bump();
+    return null;
+  }
 
   till.db.users = DEMO_STAFF.map((person) => ({
     id: `u_${person.role}`,
